@@ -4,6 +4,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.1.9/p5.min.js" integrity="sha512-WIklPM6qPCIp6d3fSSr90j+1unQHUOoWDS4sdTiR8gxUTnyZ8S2Mr8e10sKKJ/bhJgpAa/qG068RDkg6fIlNFA==" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@code-dot-org/p5.play@1.3.12-cdo/lib/p5.play.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.1.0/mqtt.min.js" integrity="sha512-sTN92jVVor4KnbCixNIu65V1Ep6JMn7p8EkBGaepVwR6tqTbMuJIUCz0RKliKW6N+aVcg192m62wR/b2GcxdWQ==" crossorigin="anonymous"></script>
+    <!-- Above library helps make the game multiplayer -->
     <meta charset="utf-8" />
     <title>Space Game</title>
     <style>body{margin:0;overflow:hidden;}</style>
@@ -11,8 +12,8 @@
 <body>
 <script>
 
-/* START JAVASCRIPT */ 
-
+/* START JAVASCRIPT */
+// Best practice to avoid global variables.
 var stars = [];
 var ship;
 var shipImage;
@@ -24,13 +25,57 @@ var uid;
 var dead;
 var button;
 var client;
-var token;
+var token= 'L1cAP6z6oSRIedvGkP8moeFOvu97ofTZ7VnKQKE4rjBvmW0uzYGM3bomunhIt0vo';
+// token is for Flespi.io, 
 
+// controls for moving the ship - not given by library
+function controls() {
+  // MOVEMENT
+  if (keyDown(UP_ARROW)) {
+    ship.addSpeed(0.2, ship.rotation-90)
+    // ship.rotation is the angle already at, but starts with 0 being right
+    send({mode: 'fly'}) // sends info to other plays
+  }
+  if (keyDown(DOWN_ARROW)) {
+    ship.addSpeed(-0.2, ship.rotation-90)
+    // ship.rotation is the angle already at, but starts with 0 being right
+    send({mode: 'fly'})
+  }
+  if (keyDown(LEFT_ARROW)) {
+    ship.rotation = ship.rotation - 4
+    ship.addSpeed(0.2, ship.rotation-90)
+    send({mode: 'turn', angle: 4})
+  }
+  if (keyDown(RIGHT_ARROW)) {
+    ship.rotation = ship.rotation + 4
+    ship.addSpeed(0.2, ship.rotation-90)
+    send({mode: 'turn', angle: 4})
+  }
+  // FIRING LASER
+  if (keyWentDown(32)) { // Spacebar press - look at library doc
+    // need ship position and angle
+    let x = ship.position.x
+    let y = ship.position.y
+    let r = ship.rotation
+    fireLaser(x, y, r, lasers) // lasers is a group, who's lasers it belongs to
+    send({mode: 'fire', x, y, r})
+  }
+}
+
+// This function from the p5 library
 function setup() {
-  uid = randomString()
+  uid = randomString() // per player unique id
 
   createCanvas(window.innerWidth, window.innerHeight)
+  // innerWith and height is just the size of the window
   background(0)
+
+  // Create some stars! use the point and stroke method
+  stroke(255) //set the color to white
+  for (let i = 0; i< 1000; i++) {
+    stars.push([random(width), random(height)]) // random is given by the library
+  }
+
 
   shipImage = loadImage(pic)
   laserImage = loadImage(bullet)
@@ -38,10 +83,10 @@ function setup() {
   lasers = new Group()
   enemyLasers = new Group()
 
-  // ship = makeShip(random(width), random(height))
-  
+  ship = makeShip(random(width), random(height))
+
   if(token) connectToFlespi()
-  
+
   button = createButton('respawn');
   button.position(19, 19);
   button.mousePressed(function(){
@@ -53,10 +98,17 @@ function setup() {
   });
   button.hide()
 
-} // end setup function
+}
 
+// Runs with the game loop, quickly and repeatedly runs this code to update the screen
 function draw() {
-  
+  background(0) // gets rid of the trail of ships
+  // have to redraw the stars each frame
+  stroke(255)
+  for (let i = 0; i< 1000; i++) {
+    point(stars[i][0], stars[i][1])
+  }
+
   if(typeof controls==='function') controls()
 
   for(var i=0; i<allSprites.length; i++){
@@ -66,12 +118,14 @@ function draw() {
     if(sprite.position.y<0){sprite.position.y=height}
     if(sprite.position.y>height){sprite.position.y=0}
   }
-  
+
+  // if lasers hit my ship, then call method shipHit
   ship.overlap(enemyLasers, shipHit)
 
-  drawSprites()
-} // end draw function
+  drawSprites() // from the library - if there's any sprites, draw them.
+}
 
+// causes explosion animation and then shows respawn button
 function shipHit(){
   ship.changeAnimation('boom')
   ship.life = 20
@@ -83,6 +137,7 @@ function shipHit(){
   button.show()
 }
 
+// create the icon, place it, and give it some physics details
 function makeShip(x,y){
   var s = createSprite(x,y)
   s.maxSpeed = 5
@@ -114,12 +169,12 @@ function fireLaser(x,y,r,group){
 
 function connectToFlespi(){
   var mqttURL = 'wss://mqtt.flespi.io'
-  client = mqtt.connect(mqttURL, { username:token})
-  client.on('connect', ()=>{
+  client = mqtt.connect(mqttURL, { username:token}) // mqtt library
+    client.on('connect', ()=>{
     initialMsg()
     client.subscribe('messages')
     client.on('message', function(t,b){
-      try { 
+      try {
         var hi = new TextDecoder("utf-8").decode(b)
         var yo = JSON.parse(hi)
         incomingMessage(yo)
@@ -128,6 +183,7 @@ function connectToFlespi(){
   })
 }
 
+// the very first message of joining a game so other players can populate other ships
 function initialMsg() {
   send({
     mode: 'join',
